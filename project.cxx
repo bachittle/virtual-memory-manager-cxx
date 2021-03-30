@@ -3,7 +3,6 @@
 #include <stdexcept>
 #include <cstdint>
 #include <fstream>
-#include <bitset>
 #include <string>
 #include <map>
 
@@ -23,10 +22,14 @@ char memory[FRAME_SIZE * FRAMES_AMOUNT]; // memory in RAM, used when fetching da
 ifstream backing_store;     // backing store is open throughout the program run, closed on program exit. 
 ofstream result_os;         // result output stream which will be stored in result.txt
 
+// fetches the required page from BACKING_STORE.
+// page number is inputted to find the corresponding BACKING_STORE index.
+// returns the frame number in physical memory which stores the page loaded from BACKING_STORE.
+// frames are 256 bytes. 
 FrameNum fetch_from_store(PageNum page_num) {
     // get the frame number from BACKING_STORE
     backing_store.seekg(page_num * FRAME_SIZE);
-    signed char buf[FRAME_SIZE]{};
+    uint8_t buf[FRAME_SIZE]{};
     backing_store.read((char*)&buf, sizeof(buf));
     if (!backing_store) {
         cerr << "error! could only output " << backing_store.gcount() << "elements. \n";
@@ -42,31 +45,22 @@ FrameNum fetch_from_store(PageNum page_num) {
     return f;
 }
 
-// takes a logical address, and translates it into its corresponding 
-// physical address
-//
-// first, we must get the page and offset number. Then, we follow the 
-// steps in the textbook regarding how to find a physical address.
+// takes a logical address, and translates it into its corresponding physical address
+// steps are outlined in textbook. page_num is indexed via the page_table to get frame_num
+// then indexing physical memory with offset gets the number stored in BACKING_STORE.bin
+// each piece of backing_store is loaded when necessary. 
 void translate_address(uint16_t logical_addr) {
     // offset is last 8 bits
     uint8_t offset = logical_addr & 255;
     // page_num is first 8 bits
     PageNum page_num = (logical_addr >> 8) & 255;
-    #if DEBUG
-    bitset<8> of(offset);
-    bitset<8> pn(page_num);
-    bitset<16> la(logical_addr);
-    cout << la << ", " << logical_addr << '\n';
-    cout << pn << ", " << page_num << '\n';
-    cout << of << ", " << offset << '\n';
-    #endif
-    FrameNum f;
+    FrameNum frame_num;
     try {
-        f = page_table.at(page_num);
+        frame_num = page_table.at(page_num);
     } catch(const out_of_range& oor) {
-        f = fetch_from_store(page_num);
+        frame_num = fetch_from_store(page_num);
     }
-    uint16_t phys_addr = (f << 8) | offset;
+    uint16_t phys_addr = (frame_num << 8) | offset;
     auto value = memory[phys_addr];
     result_os << "Virtual address: " << logical_addr 
         << " Physical address: " << phys_addr
@@ -79,11 +73,9 @@ int main(int argc, char* argv[]) {
         cout << "usage: ./a.out addresses.txt\n";
         return 0;
     }
-
     ifstream addresses;
     addresses.open(argv[1], ifstream::in);
 
-    // backing store is open here
     backing_store.open("BACKING_STORE.bin", ifstream::binary | ifstream::in);
     result_os.open("result.txt", ifstream::out);
 
@@ -92,11 +84,11 @@ int main(int argc, char* argv[]) {
     while(addresses >> a) {
         // mask this value into a 16-bit number, ignoring upper 16 bits
         uint16_t mask = a & 65535;
-        translate_address(a);
+        translate_address(mask);
         num_translated_addrs++;
     }
     result_os << "Number of Translated Addresses = " << num_translated_addrs << '\n';
     result_os << "Page Faults = " << pageFaults << '\n';
-    result_os << "Page Fault Rate = " << (pageFaults / (float)num_translated_addrs) << '\n';
+    result_os << "Page Fault Rate = " << (pageFaults / (float)num_translated_addrs) << "\n\n";
     return 0;
 }
