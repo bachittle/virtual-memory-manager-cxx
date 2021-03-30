@@ -32,7 +32,7 @@ FrameNum fetch_from_store(PageNum page_num) {
     uint8_t buf[FRAME_SIZE]{};
     backing_store.read((char*)&buf, sizeof(buf));
     if (!backing_store) {
-        cerr << "error! could only output " << backing_store.gcount() << "elements. \n";
+        cerr << "error! could only read " << backing_store.gcount() << "elements. \n";
         throw backing_store.gcount();
     }
     FrameNum f = frameIndex++;
@@ -55,17 +55,23 @@ void translate_address(uint16_t logical_addr) {
     // page_num is first 8 bits
     PageNum page_num = (logical_addr >> 8) & 255;
     FrameNum frame_num;
-    try {
-        frame_num = page_table.at(page_num);
-    } catch(const out_of_range& oor) {
-        frame_num = fetch_from_store(page_num);
+
+    // either get the frame number from the page table, or if it doesn't exist, 
+    // from the BACKING_STORE.
+    {
+        auto frame_iter = page_table.find(page_num);
+        if (frame_iter != page_table.end()) {
+            frame_num = frame_iter->second;
+        } else {
+            frame_num = fetch_from_store(page_num);
+        }
     }
+
     uint16_t phys_addr = (frame_num << 8) | offset;
     auto value = memory[phys_addr];
     result_os << "Virtual address: " << logical_addr 
         << " Physical address: " << phys_addr
         << " Value: " << static_cast<int>(value) << '\n'; 
-    // read from physical address the value
 }
 
 int main(int argc, char* argv[]) {
@@ -87,8 +93,8 @@ int main(int argc, char* argv[]) {
         translate_address(mask);
         num_translated_addrs++;
     }
-    result_os << "Number of Translated Addresses = " << num_translated_addrs << '\n';
-    result_os << "Page Faults = " << pageFaults << '\n';
-    result_os << "Page Fault Rate = " << (pageFaults / (float)num_translated_addrs) << "\n\n";
-    return 0;
+    result_os << "Number of Translated Addresses = " << num_translated_addrs << '\n'
+        << "Page Faults = " << pageFaults << '\n'
+        << "Page Fault Rate = " << (pageFaults / static_cast<float>(num_translated_addrs)) 
+        << "\n\n";
 }
